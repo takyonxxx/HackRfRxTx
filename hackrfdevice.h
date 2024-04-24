@@ -6,11 +6,19 @@
 #include <libhackrf/hackrf.h>
 #include "audiooutput.h"
 
-#define hackRfLnaGain                   40
-#define hackRfVgaGain                   40
-#define AUDIO_SAMPLE_RATE               48*1000
-#define hackrfCenterFrequency           100*1000*1000
-#define hackrfSampleRate                2000000
+#define _GHZ(x) ((uint64_t)(x) * 1000000000)
+#define _MHZ(x) ((x) * 1000000)
+#define _KHZ(x) ((x) * 1000)
+#define _HZ(x) ((x) * 1)
+
+#define hackrfCenterFrequency           _MHZ(100)
+#define hackrfSampleRate                _MHZ(20)
+#define AUDIO_SAMPLE_RATE               _KHZ(48)
+#define DEFAULT_CUT_OFF                 _KHZ(300)
+#define HACKRF_TX_VGA_MAX_DB            47.0
+#define HACKRF_RX_VGA_MAX_DB            40.0
+#define HACKRF_RX_LNA_MAX_DB            40.0
+#define HACKRF_AMP_MAX_DB               14.0
 
 enum HackRF_Format {
     HACKRF_FORMAT_FLOAT32	=0,
@@ -41,6 +49,9 @@ public:
 private:
     static int rx_callbackStream(hackrf_transfer* transfer);
     static int tx_callbackStream(hackrf_transfer* transfer);
+    void fm_demodulation(const float* input, size_t input_len, float* output, float sample_rate, float center_freq);
+    std::vector<float> create_lowpass_filter(float cutoff_freq, float sample_rate, int num_taps);
+    void apply_fir_filter(const std::vector<float>& input, const std::vector<float>& taps, std::vector<float>& output);
     std::vector<std::string> listDevices();
     std::vector<std::string> device_serials;
     std::vector<int> device_board_ids;
@@ -49,6 +60,7 @@ private:
     bool m_ptt;
     int centerFrequency;
     int sampleRate;
+    int cutoff_freq;
 };
 
 #endif // HACKRFDEVICE_H

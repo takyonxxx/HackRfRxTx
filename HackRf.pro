@@ -1,4 +1,4 @@
-QT       += core gui
+QT       += core gui multimedia
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -9,11 +9,13 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    audiooutput.cpp \
     hackrfdevice.cpp \
     main.cpp \
     mainwindow.cpp
 
 HEADERS += \
+    audiooutput.h \
     hackrfdevice.h \
     mainwindow.h
 
@@ -26,12 +28,10 @@ macos {
     QMAKE_ASSET_CATALOGS = $$PWD/macos/Assets.xcassets
     QMAKE_ASSET_CATALOGS_APP_ICON = "AppIcon"
 
-    INCLUDEPATH += /usr/local
-    INCLUDEPATH += /opt/homebrew/Cellar/hackrf/2024.02.1/include
-    INCLUDEPATH += /opt/homebrew/Cellar/libusb/1.0.27/include
+    INCLUDEPATH += /opt/local/include
+    INCLUDEPATH += /opt/local/lib
 
-    LIBS += -L/opt/homebrew/Cellar/hackrf/2024.02.1/lib -lhackrf
-    LIBS += -L/opt/homebrew/Cellar/libusb/1.0.27/lib -lusb-1.0
+    LIBS += -L/opt/local/lib -lhackrf
 }
 
 unix:!macx{

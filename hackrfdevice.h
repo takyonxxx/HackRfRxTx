@@ -4,9 +4,12 @@
 #include <QObject>
 #include <QDebug>
 #include <libhackrf/hackrf.h>
+#include "audiooutput.h"
 
-#define hackRfLnaGain 40
-#define hackRfVgaGain 40
+#define hackRfLnaGain                   40
+#define hackRfVgaGain                   40
+#define DEFAULT_SAMPLE_RATE             48*1000
+#define DEFAULT_FREQUENCY               100*1000*1000
 
 enum HackRF_Format {
     HACKRF_FORMAT_FLOAT32	=0,
@@ -28,13 +31,16 @@ public:
     explicit HackRfDevice(QObject *parent = nullptr);
     ~HackRfDevice();
 
-    static std::vector<std::string> listDevices();
     bool startHackrf();
-    bool stopHackrf();
+    bool stopHackrf();   
 
 private:
+    static int rx_callbackStream(hackrf_transfer* transfer);
+    std::vector<std::string> listDevices();
+    std::vector<std::string> device_serials;
+    std::vector<int> device_board_ids;
     hackrf_device* m_device;
-
+    AudioOutput *audioOutput{};
 };
 
 #endif // HACKRFDEVICE_H

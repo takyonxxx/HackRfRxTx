@@ -10,6 +10,12 @@ std::string removeZerosFromBegging(const std::string &string) {
 
 HackRfDevice::HackRfDevice(QObject *parent)
 {
+    audioOutput = new AudioOutput(this, DEFAULT_SAMPLE_RATE);
+
+    if (hackrf_init() != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not init hackrf");
+    }
+
     listDevices();
 }
 
@@ -19,9 +25,8 @@ HackRfDevice::~HackRfDevice()
 }
 
 std::vector<std::string> HackRfDevice::listDevices()
-{
-    std::vector<std::string> serials;
-    auto list = hackrf_device_list();
+{    
+    auto list = hackrf_device_list();    
     if (!list) {
         throw std::runtime_error("can not read hackrf devices list");
     }
@@ -29,18 +34,25 @@ std::vector<std::string> HackRfDevice::listDevices()
         if (!list->serial_numbers[i]) {
             throw std::runtime_error("can not read hackrf serial");
         }
-        serials.push_back(removeZerosFromBegging(list->serial_numbers[i]));
+        device_serials.push_back(removeZerosFromBegging(list->serial_numbers[i]));
+        device_board_ids.push_back(list->usb_board_ids[i]);
+        qDebug() << "Found HackRf " << removeZerosFromBegging(list->serial_numbers[i]) << list->usb_board_ids[i];
     }
     hackrf_device_list_free(list);
-    return serials;
+    return device_serials;
 }
 
 bool HackRfDevice::startHackrf()
 {
+    auto serial = device_serials[0];
+    auto board_id = device_board_ids[0];
+    qDebug() << "Starting HackRf " << serial.c_str() << board_id;
+
     if (hackrf_open(&m_device) != HACKRF_SUCCESS) {
         throw std::runtime_error("can not open hackrf device");
     }
-    if (hackrf_set_amp_enable(m_device, 0) != HACKRF_SUCCESS) {
+
+    if (hackrf_set_amp_enable(m_device, false) != HACKRF_SUCCESS) {
         throw std::runtime_error("can not set amp");
     }
     if (hackrf_set_antenna_enable(m_device, 0) != HACKRF_SUCCESS) {
@@ -53,17 +65,41 @@ bool HackRfDevice::startHackrf()
         throw std::runtime_error("can not set vga gain");
     }
 
-    qDebug() << "HackRf started...";
+    if (hackrf_start_rx(m_device, &HackRfDevice::rx_callbackStream, this) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not start stream");
+    }
+
+    if (hackrf_set_freq(m_device, DEFAULT_FREQUENCY) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not set frequency");
+    }
+
     return true;
 }
 
 bool HackRfDevice::stopHackrf()
 {
-    if (hackrf_exit() != HACKRF_SUCCESS) {
-        qDebug() << "Can not exit hackrf";
+    if (hackrf_stop_rx(m_device) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not stop rx stream");
+    }
+
+    if (hackrf_close(m_device) != HACKRF_SUCCESS) {
+        qDebug() << "Can not close hackrf";
         return false;
     }
 
-    qDebug() << "HackRf stopped...";
+    m_device = nullptr;
+
+    qDebug() << "HackRf closed...";
     return true;
+}
+
+int HackRfDevice::rx_callbackStream(hackrf_transfer *transfer) {
+    qDebug() << transfer->valid_length;
+    HackRfDevice *device = reinterpret_cast<HackRfDevice *>(transfer->rx_ctx);
+
+    QByteArray data = QByteArray::fromRawData(reinterpret_cast<const char*>(transfer->buffer), transfer->valid_length);
+    if (device->audioOutput && !data.isEmpty()) {
+        device->audioOutput->writeBuffer(data);
+    }
+    return 0;
 }

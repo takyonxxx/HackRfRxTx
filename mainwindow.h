@@ -21,6 +21,8 @@ private slots:
 
     void on_pushExit_clicked();
 
+    void on_radioPtt_clicked(bool checked);
+
 private:
     HackRfDevice *hackRfDevice{};
 

@@ -39,3 +39,12 @@ void MainWindow::on_pushExit_clicked()
     exit(0);
 }
 
+
+void MainWindow::on_radioPtt_clicked(bool checked)
+{
+    if(checked)
+        hackRfDevice->setPtt(true);
+    else
+       hackRfDevice->setPtt(false);
+}
+

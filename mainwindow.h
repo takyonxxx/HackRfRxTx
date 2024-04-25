@@ -18,10 +18,9 @@ public:
 
 private slots:
     void on_pushToogleHackrf_clicked();
-
     void on_pushExit_clicked();
-
     void on_radioPtt_clicked(bool checked);
+    void getNewFttData(float *, float *, int);
 
 private:
     HackRfDevice *hackRfDevice{};

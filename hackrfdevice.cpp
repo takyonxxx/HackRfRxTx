@@ -1,4 +1,6 @@
 #include "hackrfdevice.h"
+#include <complex>
+const double PI = 3.14159265358979323846;
 
 std::string removeZerosFromBegging(const std::string &string) {
     uint32_t i = 0;
@@ -12,6 +14,12 @@ HackRfDevice::HackRfDevice(QObject *parent):
     m_ptt(false), cutoff_freq(DEFAULT_CUT_OFF)
 {
     audioOutput = new AudioOutput(this, AUDIO_SAMPLE_RATE);
+
+    d_realFftData = new float[MAX_FFT_SIZE];
+    d_pwrFftData = new float[MAX_FFT_SIZE]();
+    d_iirFftData = new float[MAX_FFT_SIZE];
+    for (int i = 0; i < MAX_FFT_SIZE; i++)
+        d_iirFftData[i] = RESET_FFT_FACTOR;  // dBFS
 
     if (hackrf_init() != HACKRF_SUCCESS) {
         throw std::runtime_error("can not init hackrf");
@@ -200,6 +208,110 @@ void HackRfDevice::apply_fir_filter(const std::vector<float>& input, const std::
     }
 }
 
+// Function to perform an iterative Cooley-Tukey FFT
+void HackRfDevice::fft(double* real, double* imag, int n)
+{
+    // Bit reversal permutation
+    int j = 0;
+    for (int i = 0; i < n; i++) {
+        if (i < j) {
+            std::swap(real[i], real[j]);
+            std::swap(imag[i], imag[j]);
+        }
+        int m = n / 2;
+        while (j >= m && m > 0) {
+            j -= m;
+            m /= 2;
+        }
+        j += m;
+    }
+
+    // FFT computation
+    for (int len = 2; len <= n; len *= 2) {
+        double angle = -2.0 * PI / len;
+        double wlen_cos = cos(angle);
+        double wlen_sin = sin(angle);
+        for (int i = 0; i < n; i += len) {
+            double w_real = 1.0;
+            double w_imag = 0.0;
+            for (int j = 0; j < len / 2; j++) {
+                double u_real = real[i + j];
+                double u_imag = imag[i + j];
+                double v_real = real[i + j + len / 2];
+                double v_imag = imag[i + j + len / 2];
+
+                double t_real = w_real * v_real - w_imag * v_imag;
+                double t_imag = w_real * v_imag + w_imag * v_real;
+
+                real[i + j] = u_real + t_real;
+                imag[i + j] = u_imag + t_imag;
+                real[i + j + len / 2] = u_real - t_real;
+                imag[i + j + len / 2] = u_imag - t_imag;
+
+                double w_temp = w_real * wlen_cos - w_imag * wlen_sin;
+                w_imag = w_real * wlen_sin + w_imag * wlen_cos;
+                w_real = w_temp;
+            }
+        }
+    }
+}
+
+double* HackRfDevice::process_fft(hackrf_transfer *transfer, int& length)
+{
+    uint8_t *data = transfer->buffer;
+    length = transfer->buffer_length / 2; // Each I/Q sample consists of 2 bytes
+    double* log_amplitude = new double[length];
+    d_fftAvg = static_cast<float>(1.0 - 1.0e-2 * 90);
+    auto fftsize = static_cast<unsigned int>(length);
+
+    if (fftsize > MAX_FFT_SIZE)
+        fftsize = MAX_FFT_SIZE;
+
+    if (fftsize == 0)
+    {
+        return 0;
+    }
+
+    auto pwr_scale = static_cast<float>(1.0 / fftsize);
+    double fullScalePower = 1.0;
+
+    // Create arrays for real and imaginary parts
+    double *real = new double[fftsize];
+    double *imag = new double[fftsize];
+//    std::complex<float> pt;
+
+
+    // Calculate the magnitude and logarithmic amplitude
+    for (int i = 0; i < fftsize; i++) {
+        if (i < fftsize / 2)
+        {
+            imag[i]  = data[fftsize / 2 + i];
+        }
+        else
+        {
+            imag[i] = data[i - fftsize / 2];
+        }
+
+//      fft(real, imag, fftsize);
+        double magnitude = pwr_scale * (real[i] * real[i] + imag[i] * imag[i]);
+//      double magnitude = pwr_scale * (pt.imag() * pt.imag() + pt.real() * pt.real());
+
+        // Calculate the logarithmic amplitude
+        log_amplitude[i] = 10 * log10(magnitude + 1.0e-20f) / fullScalePower;
+        d_realFftData[i] = log_amplitude[i];
+        d_iirFftData[i] += d_fftAvg * (d_realFftData[i] - d_iirFftData[i]);
+    }
+
+    emit setNewFttData(d_iirFftData, d_realFftData, static_cast<int>(fftsize));
+
+    // Clean up the real and imaginary arrays
+    delete[] real;
+    delete[] imag;
+
+    // Return the logarithmic amplitude array
+    return log_amplitude;
+}
+
 
 int HackRfDevice::tx_callbackStream(hackrf_transfer *transfer) {
     qDebug() << transfer->valid_length;
@@ -211,36 +323,40 @@ int HackRfDevice::rx_callbackStream(hackrf_transfer *transfer)
 {
     HackRfDevice *device = reinterpret_cast<HackRfDevice *>(transfer->rx_ctx);
 
-    // Extract data from HackRF transfer buffer
-    const float* rf_data = reinterpret_cast<const float*>(transfer->buffer);
-    size_t rf_data_len = transfer->valid_length / sizeof(float);
+    int length = 0;
+    double* amplitude = device->process_fft(transfer, length);
+    delete[] amplitude;
 
-    // Downconvert to baseband by mixing with center frequency
-    std::vector<float> baseband_data(rf_data_len);
-    for (size_t i = 0; i < rf_data_len; ++i) {
-        float phase = 2 * M_PI * device->centerFrequency * i / device->sampleRate;
-        baseband_data[i] = rf_data[i] * std::cos(phase);
-    }
+//    // Extract data from HackRF transfer buffer
+//    const float* rf_data = reinterpret_cast<const float*>(transfer->buffer);
+//    size_t rf_data_len = transfer->valid_length / sizeof(float);
 
-    // Perform FM demodulation
-    std::vector<float> demodulated_data(rf_data_len);
-    device->fm_demodulation(baseband_data.data(), rf_data_len, demodulated_data.data(), device->sampleRate, device->centerFrequency);
+//    // Downconvert to baseband by mixing with center frequency
+//    std::vector<float> baseband_data(rf_data_len);
+//    for (size_t i = 0; i < rf_data_len; ++i) {
+//        float phase = 2 * M_PI * device->centerFrequency * i / device->sampleRate;
+//        baseband_data[i] = rf_data[i] * std::cos(phase);
+//    }
 
-    // Create low-pass filter coefficients
-    float cutoff_freq = device->cutoff_freq; // Adjust cutoff frequency as needed
-    int num_taps = 101; // Adjust number of taps as needed
-    std::vector<float> filter_taps = device->create_lowpass_filter(cutoff_freq, device->sampleRate, num_taps);
+//    // Perform FM demodulation
+//    std::vector<float> demodulated_data(rf_data_len);
+//    device->fm_demodulation(baseband_data.data(), rf_data_len, demodulated_data.data(), device->sampleRate, device->centerFrequency);
 
-    // Apply low-pass filter to demodulated data
-    std::vector<float> filtered_data(rf_data_len);
-    device->apply_fir_filter(demodulated_data, filter_taps, filtered_data);
+//    // Create low-pass filter coefficients
+//    float cutoff_freq = device->cutoff_freq; // Adjust cutoff frequency as needed
+//    int num_taps = 101; // Adjust number of taps as needed
+//    std::vector<float> filter_taps = device->create_lowpass_filter(cutoff_freq, device->sampleRate, num_taps);
+
+//    // Apply low-pass filter to demodulated data
+//    std::vector<float> filtered_data(rf_data_len);
+//    device->apply_fir_filter(demodulated_data, filter_taps, filtered_data);
 
 
-    QByteArray data(reinterpret_cast<const char*>(filtered_data.data()), rf_data_len * sizeof(float));
+//    QByteArray data(reinterpret_cast<const char*>(filtered_data.data()), rf_data_len * sizeof(float));
 
-    // Write filtered data to audio output
-    if (!device->m_ptt && device->audioOutput && !data.isEmpty()) {
-        device->audioOutput->writeBuffer(data);
-    }
+//    // Write filtered data to audio output
+//    if (!device->m_ptt && device->audioOutput && !data.isEmpty()) {
+//        device->audioOutput->writeBuffer(data);
+//    }
     return 0;
 }

@@ -8,8 +8,35 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     setWindowTitle("HackRf");
     hackRfDevice = new HackRfDevice();
+    connect(hackRfDevice, &HackRfDevice::setNewFttData, this, &MainWindow::getNewFttData);
+
     ui->pushToogleHackrf->setStyleSheet("font-size: 24pt; font: bold; color: #ffffff; background-color: #097532;");
     ui->pushExit->setStyleSheet("font-size: 24pt; font: bold; color: #ffffff; background-color: #900C3F;");
+
+    ui->plotter->setTooltipsEnabled(true);
+
+    ui->plotter->setSampleRate(20000000);
+    ui->plotter->setSpanFreq(static_cast<quint32>(20000000));
+    ui->plotter->setCenterFreq(static_cast<quint64>(100000000));
+
+    ui->plotter->setFftRange(-140.0f, 20.0f);
+    ui->plotter->setPandapterRange(-140.f, 20.f);
+    auto m_LowCutFreq = -1* 200000;
+    auto m_HiCutFreq = 200000;
+    ui->plotter->setHiLowCutFrequencies(m_LowCutFreq, m_HiCutFreq);
+    ui->plotter->setDemodRanges(m_LowCutFreq, -5000, 5000,m_HiCutFreq, true);
+
+    ui->plotter->setFreqUnits(1000);
+    ui->plotter->setPercent2DScreen(50);
+    ui->plotter->setFilterBoxEnabled(true);
+    ui->plotter->setCenterLineEnabled(true);
+    ui->plotter->setClickResolution(1);
+
+    ui->plotter->setFftPlotColor(QColor("#CEECF5"));
+    ui->plotter->setFreqStep(50000);
+
+    //ui->plotter->setPeakDetection(true ,2);
+    ui->plotter->setFftFill(true);
 }
 
 MainWindow::~MainWindow()
@@ -45,6 +72,11 @@ void MainWindow::on_radioPtt_clicked(bool checked)
     if(checked)
         hackRfDevice->setPtt(true);
     else
-       hackRfDevice->setPtt(false);
+        hackRfDevice->setPtt(false);
+}
+
+void MainWindow::getNewFttData(float *d_iirFftData, float *d_realFftData, int fftsize)
+{
+    ui->plotter->setNewFttData(d_iirFftData, d_realFftData, static_cast<int>(fftsize));
 }
 

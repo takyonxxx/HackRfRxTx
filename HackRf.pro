@@ -10,14 +10,22 @@ CONFIG += c++17
 
 SOURCES += \
     audiooutput.cpp \
+    bandplan.cpp \
+    bookmarks.cpp \
+    dxc_spots.cpp \
     hackrfdevice.cpp \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    plotter.cpp
 
 HEADERS += \
     audiooutput.h \
+    bandplan.h \
+    bookmarks.h \
+    dxc_spots.h \
     hackrfdevice.h \
-    mainwindow.h
+    mainwindow.h \
+    plotter.h
 
 FORMS += \
     mainwindow.ui
@@ -28,10 +36,10 @@ macos {
     QMAKE_ASSET_CATALOGS = $$PWD/macos/Assets.xcassets
     QMAKE_ASSET_CATALOGS_APP_ICON = "AppIcon"
 
-    INCLUDEPATH += /opt/local/include
-    INCLUDEPATH += /opt/local/lib
-
-    LIBS += -L/opt/local/lib -lhackrf
+    INCLUDEPATH += /opt/homebrew/Cellar/hackrf/2024.02.1/include  
+    INCLUDEPATH += /opt/homebrew/Cellar/volk/3.1.2/include
+    LIBS += -L/opt/homebrew/Cellar/hackrf/2024.02.1/lib -lhackrf
+    LIBS += -L/opt/homebrew/Cellar/volk/3.1.2/lib -lvolk
 }
 
 unix:!macx{

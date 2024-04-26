@@ -17,7 +17,7 @@
 #define hackrfCenterFrequency           _MHZ(100)
 #define hackrfSampleRate                _MHZ(20)
 #define AUDIO_SAMPLE_RATE               _KHZ(48)
-#define DEFAULT_CUT_OFF                 _KHZ(300)
+#define DEFAULT_CUT_OFF                 _KHZ(150)
 #define HACKRF_TX_VGA_MAX_DB            47.0
 #define HACKRF_RX_VGA_MAX_DB            40.0
 #define HACKRF_RX_LNA_MAX_DB            40.0
@@ -41,6 +41,19 @@ typedef enum {
     HACKRF_TRANSCEIVER_MODE_TX = 2,
 } HackRF_transceiver_mode_t;
 
+typedef struct{
+    uint8_t ch_mask;
+    int16_t *ch1_data;
+    int16_t *ch2_data;
+    int16_t *ch3_data;
+    int16_t *ch4_data;
+    size_t buffer_size;
+    size_t head;
+    size_t tail;
+    size_t valid_length;
+    bool overflow_flag;
+} scope_ch_data_t;
+
 class HackRfDevice: public QObject
 {
     Q_OBJECT
@@ -50,9 +63,18 @@ public:
 
     bool startHackrf();
     bool stopHackrf();
+
+    void set_frequency( uint64_t freq );
+    void set_sample_rate( uint64_t srate );
+    void set_amp_enabled( bool enabled );
+    void set_lna_gain( uint32_t gain );
+    void set_vga_gain( uint32_t gain );
+    bool is_streaming() const;
+
     bool force_sample_rate( double fs_hz );
     bool ptt() const;
     void setPtt(bool newPtt);
+    int clear_rxch_buff(scope_ch_data_t *ch_data);
 
 signals:
     void setNewFttData(float *, float *, int);
@@ -61,7 +83,7 @@ private:
     static int rx_callbackStream(hackrf_transfer* transfer);
     static int tx_callbackStream(hackrf_transfer* transfer);
     void fft(double* real, double* imag, int n);
-    double* process_fft(hackrf_transfer *transfer, int& length);
+    void process_fft(hackrf_transfer *transfer);
     void fm_demodulation(const float* input, size_t input_len, float* output, float sample_rate, float center_freq);
     std::vector<float> create_lowpass_filter(float cutoff_freq, float sample_rate, int num_taps);
     void apply_fir_filter(const std::vector<float>& input, const std::vector<float>& taps, std::vector<float>& output);

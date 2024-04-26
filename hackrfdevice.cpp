@@ -10,6 +10,33 @@ std::string removeZerosFromBegging(const std::string &string) {
     return string.substr(i, string.length() - i);
 }
 
+#define BUFFER_SIZE 20000000
+#define CH1_MASK 0x01
+#define CH2_MASK 0x02
+#define CH3_MASK 0x03
+#define CH4_MASK 0x04
+
+#define PRE_SAMPLE_COUNT 10000
+#define POST_SAMPLE_COUNT 10000
+static int16_t rx_data_bufferI[BUFFER_SIZE];
+static int16_t rx_data_bufferQ[BUFFER_SIZE];
+static int16_t magnitude[BUFFER_SIZE];
+
+scope_ch_data_t ch_data = {
+    .ch_mask = CH1_MASK | CH2_MASK | CH3_MASK,
+    .ch1_data = rx_data_bufferI,
+    .ch2_data = rx_data_bufferQ,
+    .ch3_data = magnitude,
+    .ch4_data = NULL,
+    .buffer_size = BUFFER_SIZE,
+    .head = 0,
+    .tail = 0,
+    .valid_length = 0,
+    .overflow_flag = false
+};
+
+pthread_mutex_t mutex_lock;
+
 HackRfDevice::HackRfDevice(QObject *parent):
     m_ptt(false), cutoff_freq(DEFAULT_CUT_OFF)
 {
@@ -30,7 +57,9 @@ HackRfDevice::HackRfDevice(QObject *parent):
 
 HackRfDevice::~HackRfDevice()
 {
+    clear_rxch_buff(&ch_data);
     stopHackrf();
+    hackrf_exit();
 }
 
 std::vector<std::string> HackRfDevice::listDevices()
@@ -70,37 +99,19 @@ bool HackRfDevice::startHackrf()
         throw std::runtime_error("can not open hackrf device");
     }
 
-    if (hackrf_set_amp_enable(m_device, false) != HACKRF_SUCCESS) {
-        throw std::runtime_error("can not set amp rx");
+    if (hackrf_set_antenna_enable(m_device, 0) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not set antenna");
     }
-    if (m_ptt && hackrf_set_amp_enable(m_device, true) != HACKRF_SUCCESS) {
-        throw std::runtime_error("can not set amp tx");
-    }
+
+    set_amp_enabled(false);
+    set_lna_gain(HACKRF_RX_LNA_MAX_DB);
+    set_vga_gain(HACKRF_RX_VGA_MAX_DB);
+    set_sample_rate(hackrfSampleRate);
+    set_frequency(hackrfCenterFrequency);
+
     if (m_ptt && hackrf_set_txvga_gain(m_device, HACKRF_TX_VGA_MAX_DB) != HACKRF_SUCCESS) {
         throw std::runtime_error("can not set amp tx");
     }
-    if (hackrf_set_antenna_enable(m_device, 0) != HACKRF_SUCCESS) {
-        throw std::runtime_error("can not set antenna");
-    }  
-
-    if (hackrf_set_lna_gain(m_device, HACKRF_RX_LNA_MAX_DB) != HACKRF_SUCCESS) {
-        throw std::runtime_error("can not set lna gain");
-    }
-    if (hackrf_set_vga_gain(m_device, HACKRF_RX_LNA_MAX_DB) != HACKRF_SUCCESS) {
-        throw std::runtime_error("can not set vga gain");
-    }
-
-    if (!force_sample_rate(hackrfSampleRate)) {
-        throw std::runtime_error("can not set sample rate");
-    }
-    else
-        sampleRate = hackrfSampleRate;
-
-    if (hackrf_set_freq(m_device, hackrfCenterFrequency) != HACKRF_SUCCESS) {
-        throw std::runtime_error("can not set frequency");
-    }
-    else
-        centerFrequency = hackrfCenterFrequency;
 
     if (m_ptt && hackrf_start_tx(m_device, &HackRfDevice::tx_callbackStream, this) != HACKRF_SUCCESS) {
         throw std::runtime_error("can not start tx stream");
@@ -136,6 +147,50 @@ bool HackRfDevice::stopHackrf()
     m_device = nullptr;
     qDebug() << "HackRf closed...";
     return true;
+}
+
+void HackRfDevice::set_frequency(uint64_t freq)
+{
+    if (hackrf_set_freq(m_device, freq) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not set frequency");
+    }
+    else
+        centerFrequency = freq;
+}
+
+void HackRfDevice::set_sample_rate(uint64_t srate)
+{
+    if (!force_sample_rate(srate)) {
+        throw std::runtime_error("can not set sample rate");
+    }
+    else
+        sampleRate = srate;
+}
+
+void HackRfDevice::set_amp_enabled(bool enabled)
+{
+    if (hackrf_set_amp_enable(m_device, enabled) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not set amp");
+    }
+}
+
+void HackRfDevice::set_lna_gain(uint32_t gain)
+{
+    if (hackrf_set_lna_gain(m_device, gain) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not set lna gain");
+    }
+}
+
+void HackRfDevice::set_vga_gain(uint32_t gain)
+{
+    if (hackrf_set_vga_gain(m_device, gain) != HACKRF_SUCCESS) {
+        throw std::runtime_error("can not set vga gain");
+    }
+}
+
+bool HackRfDevice::is_streaming() const
+{
+    return ( hackrf_is_streaming(m_device) == HACKRF_TRUE );
 }
 
 bool HackRfDevice::force_sample_rate( double fs_hz )
@@ -208,108 +263,44 @@ void HackRfDevice::apply_fir_filter(const std::vector<float>& input, const std::
     }
 }
 
-// Function to perform an iterative Cooley-Tukey FFT
-void HackRfDevice::fft(double* real, double* imag, int n)
+void HackRfDevice::process_fft(hackrf_transfer *transfer)
 {
-    // Bit reversal permutation
-    int j = 0;
-    for (int i = 0; i < n; i++) {
-        if (i < j) {
-            std::swap(real[i], real[j]);
-            std::swap(imag[i], imag[j]);
-        }
-        int m = n / 2;
-        while (j >= m && m > 0) {
-            j -= m;
-            m /= 2;
-        }
-        j += m;
-    }
+    if(ch_data.overflow_flag)
+        return;
 
-    // FFT computation
-    for (int len = 2; len <= n; len *= 2) {
-        double angle = -2.0 * PI / len;
-        double wlen_cos = cos(angle);
-        double wlen_sin = sin(angle);
-        for (int i = 0; i < n; i += len) {
-            double w_real = 1.0;
-            double w_imag = 0.0;
-            for (int j = 0; j < len / 2; j++) {
-                double u_real = real[i + j];
-                double u_imag = imag[i + j];
-                double v_real = real[i + j + len / 2];
-                double v_imag = imag[i + j + len / 2];
-
-                double t_real = w_real * v_real - w_imag * v_imag;
-                double t_imag = w_real * v_imag + w_imag * v_real;
-
-                real[i + j] = u_real + t_real;
-                imag[i + j] = u_imag + t_imag;
-                real[i + j + len / 2] = u_real - t_real;
-                imag[i + j + len / 2] = u_imag - t_imag;
-
-                double w_temp = w_real * wlen_cos - w_imag * wlen_sin;
-                w_imag = w_real * wlen_sin + w_imag * wlen_cos;
-                w_real = w_temp;
-            }
-        }
-    }
-}
-
-double* HackRfDevice::process_fft(hackrf_transfer *transfer, int& length)
-{
-    uint8_t *data = transfer->buffer;
-    length = transfer->buffer_length / 2; // Each I/Q sample consists of 2 bytes
-    double* log_amplitude = new double[length];
-    d_fftAvg = static_cast<float>(1.0 - 1.0e-2 * 90);
-    auto fftsize = static_cast<unsigned int>(length);
-
-    if (fftsize > MAX_FFT_SIZE)
-        fftsize = MAX_FFT_SIZE;
-
-    if (fftsize == 0)
+    if(transfer->valid_length)
     {
-        return 0;
-    }
-
-    auto pwr_scale = static_cast<float>(1.0 / fftsize);
-    double fullScalePower = 1.0;
-
-    // Create arrays for real and imaginary parts
-    double *real = new double[fftsize];
-    double *imag = new double[fftsize];
-//    std::complex<float> pt;
-
-
-    // Calculate the magnitude and logarithmic amplitude
-    for (int i = 0; i < fftsize; i++) {
-        if (i < fftsize / 2)
-        {
-            imag[i]  = data[fftsize / 2 + i];
+        pthread_mutex_lock(&mutex_lock);
+        d_fftAvg = static_cast<float>(1.0 - 1.0e-2 * 90);
+        int16_t I,Q;
+        auto fftsize = transfer->valid_length / 2;
+        auto pwr_scale = static_cast<float>(1.0 / fftsize);
+        double fullScalePower = 1.0;
+        for(int i = 0; i < transfer->valid_length; i += 2){
+            I = *((int8_t*)transfer->buffer + i);
+            Q = *((int8_t*)transfer->buffer + i + 1);
+            *(rx_data_bufferI + ch_data.tail) = I;
+            *(rx_data_bufferQ + ch_data.tail) = Q;
+            *(magnitude + ch_data.tail) = pwr_scale * sqrt(pow(I, 2) + pow(Q, 2));
+            ch_data.tail++;
+            if(ch_data.tail == ch_data.buffer_size)
+                ch_data.tail = 0;
+            if(ch_data.tail == ch_data.head) //Receive overflow
+            {
+                ch_data.overflow_flag = true;
+                qDebug() << "Receive data flow!";
+            }
+            d_realFftData[i] = 50 * log10(*(magnitude + ch_data.tail) + 1.0e-20f) / fullScalePower;
+            d_iirFftData[i] += d_fftAvg * (d_realFftData[i] - d_iirFftData[i]);
         }
-        else
-        {
-            imag[i] = data[i - fftsize / 2];
-        }
+        ch_data.valid_length = ch_data.tail > ch_data.head ?
+                                   ch_data.tail - ch_data.head:
+                                   ch_data.tail + ch_data.buffer_size - ch_data.head;
 
-//      fft(real, imag, fftsize);
-        double magnitude = pwr_scale * (real[i] * real[i] + imag[i] * imag[i]);
-//      double magnitude = pwr_scale * (pt.imag() * pt.imag() + pt.real() * pt.real());
-
-        // Calculate the logarithmic amplitude
-        log_amplitude[i] = 10 * log10(magnitude + 1.0e-20f) / fullScalePower;
-        d_realFftData[i] = log_amplitude[i];
-        d_iirFftData[i] += d_fftAvg * (d_realFftData[i] - d_iirFftData[i]);
+        emit setNewFttData(d_iirFftData, d_realFftData, static_cast<int>(fftsize));
+        clear_rxch_buff(&ch_data);
+        pthread_mutex_unlock(&mutex_lock);
     }
-
-    emit setNewFttData(d_iirFftData, d_realFftData, static_cast<int>(fftsize));
-
-    // Clean up the real and imaginary arrays
-    delete[] real;
-    delete[] imag;
-
-    // Return the logarithmic amplitude array
-    return log_amplitude;
 }
 
 
@@ -319,13 +310,31 @@ int HackRfDevice::tx_callbackStream(hackrf_transfer *transfer) {
     QByteArray data = QByteArray::fromRawData(reinterpret_cast<const char*>(transfer->buffer), transfer->valid_length);
 }
 
+
+int HackRfDevice::clear_rxch_buff(scope_ch_data_t *ch_buffer)
+{
+    if(ch_buffer->overflow_flag)
+    {
+        ch_buffer->overflow_flag = false;
+        ch_buffer->head = 0;
+        ch_buffer->tail = 0;
+        ch_buffer->valid_length = 0;
+        return 1;
+    }
+    else if(ch_buffer->valid_length > 0)
+    {
+        ch_buffer->head = ch_buffer->tail;
+        ch_buffer->valid_length = 0;
+        return 0;
+    }
+    return -1;
+}
+
 int HackRfDevice::rx_callbackStream(hackrf_transfer *transfer)
 {
-    HackRfDevice *device = reinterpret_cast<HackRfDevice *>(transfer->rx_ctx);
-
-    int length = 0;
-    double* amplitude = device->process_fft(transfer, length);
-    delete[] amplitude;
+    HackRfDevice *device = reinterpret_cast<HackRfDevice *>(transfer->rx_ctx);   
+    device->process_fft(transfer);
+    return 0;
 
 //    // Extract data from HackRF transfer buffer
 //    const float* rf_data = reinterpret_cast<const float*>(transfer->buffer);
@@ -358,5 +367,4 @@ int HackRfDevice::rx_callbackStream(hackrf_transfer *transfer)
 //    if (!device->m_ptt && device->audioOutput && !data.isEmpty()) {
 //        device->audioOutput->writeBuffer(data);
 //    }
-    return 0;
 }

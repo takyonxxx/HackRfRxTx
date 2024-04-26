@@ -15,14 +15,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->plotter->setTooltipsEnabled(true);
 
-    ui->plotter->setSampleRate(20000000);
-    ui->plotter->setSpanFreq(static_cast<quint32>(20000000));
-    ui->plotter->setCenterFreq(static_cast<quint64>(100000000));
+    ui->plotter->setSampleRate(hackrfSampleRate);
+    ui->plotter->setSpanFreq(static_cast<quint32>(hackrfSampleRate));
+    ui->plotter->setCenterFreq(static_cast<quint64>(hackrfCenterFrequency));
 
     ui->plotter->setFftRange(-140.0f, 20.0f);
     ui->plotter->setPandapterRange(-140.f, 20.f);
-    auto m_LowCutFreq = -1* 200000;
-    auto m_HiCutFreq = 200000;
+    auto m_LowCutFreq = -1* DEFAULT_CUT_OFF;
+    auto m_HiCutFreq = DEFAULT_CUT_OFF;
     ui->plotter->setHiLowCutFrequencies(m_LowCutFreq, m_HiCutFreq);
     ui->plotter->setDemodRanges(m_LowCutFreq, -5000, 5000,m_HiCutFreq, true);
 

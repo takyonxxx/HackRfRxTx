@@ -6,6 +6,7 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <complex>
 #include <libhackrf/hackrf.h>
 #include "audiooutput.h"
 
@@ -17,16 +18,14 @@
 #define hackrfCenterFrequency           _MHZ(100)
 #define hackrfSampleRate                _MHZ(20)
 #define AUDIO_SAMPLE_RATE               _KHZ(48)
-#define DEFAULT_CUT_OFF                 _KHZ(150)
+#define DEFAULT_CUT_OFF                 _KHZ(300)
 #define HACKRF_TX_VGA_MAX_DB            47.0
 #define HACKRF_RX_VGA_MAX_DB            40.0
 #define HACKRF_RX_LNA_MAX_DB            40.0
 #define HACKRF_AMP_MAX_DB               14.0
-#define DEFAULT_FFT_SIZE                8192 * 4
-#define DEFAULT_FFT_RATE                25 //Hz
-#define DEFAULT_AUDIO_GAIN              50
-#define MAX_FFT_SIZE                 DEFAULT_FFT_SIZE
-#define RESET_FFT_FACTOR             -72
+#define DEFAULT_FFT_SIZE                hackrfSampleRate
+#define RESET_FFT_FACTOR                0
+
 
 enum HackRF_Format {
     HACKRF_FORMAT_FLOAT32	=0,
@@ -40,19 +39,6 @@ typedef enum {
     HACKRF_TRANSCEIVER_MODE_RX = 1,
     HACKRF_TRANSCEIVER_MODE_TX = 2,
 } HackRF_transceiver_mode_t;
-
-typedef struct{
-    uint8_t ch_mask;
-    int16_t *ch1_data;
-    int16_t *ch2_data;
-    int16_t *ch3_data;
-    int16_t *ch4_data;
-    size_t buffer_size;
-    size_t head;
-    size_t tail;
-    size_t valid_length;
-    bool overflow_flag;
-} scope_ch_data_t;
 
 class HackRfDevice: public QObject
 {
@@ -74,7 +60,6 @@ public:
     bool force_sample_rate( double fs_hz );
     bool ptt() const;
     void setPtt(bool newPtt);
-    int clear_rxch_buff(scope_ch_data_t *ch_data);
 
 signals:
     void setNewFttData(float *, float *, int);
@@ -82,7 +67,7 @@ signals:
 private:
     static int rx_callbackStream(hackrf_transfer* transfer);
     static int tx_callbackStream(hackrf_transfer* transfer);
-    void fft(double* real, double* imag, int n);
+    void performFFT(std::vector<std::complex<float>> &fftData);
     void process_fft(hackrf_transfer *transfer);
     void fm_demodulation(const float* input, size_t input_len, float* output, float sample_rate, float center_freq);
     std::vector<float> create_lowpass_filter(float cutoff_freq, float sample_rate, int num_taps);
@@ -101,6 +86,7 @@ private:
     float *d_iirFftData;
     float *d_pwrFftData;
     float  d_fftAvg;
+
 };
 
 #endif // HACKRFDEVICE_H

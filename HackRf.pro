@@ -10,9 +10,6 @@ CONFIG += c++17
 
 SOURCES += \
     audiooutput.cpp \
-    bandplan.cpp \
-    bookmarks.cpp \
-    dxc_spots.cpp \
     hackrfdevice.cpp \
     main.cpp \
     mainwindow.cpp \
@@ -20,9 +17,6 @@ SOURCES += \
 
 HEADERS += \
     audiooutput.h \
-    bandplan.h \
-    bookmarks.h \
-    dxc_spots.h \
     hackrfdevice.h \
     mainwindow.h \
     plotter.h
@@ -36,10 +30,10 @@ macos {
     QMAKE_ASSET_CATALOGS = $$PWD/macos/Assets.xcassets
     QMAKE_ASSET_CATALOGS_APP_ICON = "AppIcon"
 
-    INCLUDEPATH += /opt/homebrew/Cellar/hackrf/2024.02.1/include  
-    INCLUDEPATH += /opt/homebrew/Cellar/volk/3.1.2/include
-    LIBS += -L/opt/homebrew/Cellar/hackrf/2024.02.1/lib -lhackrf
-    LIBS += -L/opt/homebrew/Cellar/volk/3.1.2/lib -lvolk
+    # INCLUDEPATH += /opt/homebrew/Cellar/hackrf/2024.02.1/include
+    # LIBS += -L/opt/homebrew/Cellar/hackrf/2024.02.1/lib -lhackrf
+    INCLUDEPATH += /usr/local/include/
+    LIBS += -L/usr/local/lib -lhackrf
 }
 
 unix:!macx{
@@ -49,6 +43,7 @@ unix:!macx{
     INCLUDEPATH += /usr/lib
     INCLUDEPATH += /usr/local/lib
     INCLUDEPATH += /usr/lib/x86_64-linux-gnu
+    LIBS += -L/usr/local/lib -lhackrf
 }
 
 # Default rules for deployment.

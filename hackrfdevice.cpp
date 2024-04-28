@@ -180,115 +180,6 @@ bool HackRfDevice::force_sample_rate( double fs_hz )
     return false;
 }
 
-void HackRfDevice::fm_demodulation(const float* input, size_t input_len, float* output, float sample_rate, float center_freq) {
-    float prev_phase = 0.0;
-
-    // Compute instantaneous frequency
-    for (size_t i = 0; i < input_len; ++i) {
-        float phase = std::atan2(input[i], input[i-1]);
-        float deviation = phase - prev_phase;
-        // Compute frequency deviation (change in phase over time)
-        output[i] = deviation * sample_rate / (2 * M_PI);
-        prev_phase = phase;
-    }
-}
-
-
-std::vector<float> HackRfDevice::create_lowpass_filter(float cutoff_freq, float sample_rate, int num_taps)
-{
-    std::vector<float> taps(num_taps);
-    float omega_c = 2 * M_PI * cutoff_freq / sample_rate;
-    float window_sum = 0.0;
-    float n_minus_center = num_taps / 2.0;
-    for (int n = 0; n < num_taps; ++n) {
-        if (n == n_minus_center) {
-            taps[n] = 2 * cutoff_freq / sample_rate;
-        } else {
-            taps[n] = (std::sin(omega_c * (n - n_minus_center)) / (M_PI * (n - n_minus_center))) * (0.54 - 0.46 * std::cos(2 * M_PI * n / (num_taps - 1)));
-        }
-        window_sum += taps[n];
-    }
-    // Normalize taps
-    for (int n = 0; n < num_taps; ++n) {
-        taps[n] /= window_sum;
-    }
-    return taps;
-}
-
-void HackRfDevice::apply_fir_filter(const std::vector<float>& input, const std::vector<float>& taps, std::vector<float>& output)
-{
-    int num_taps = taps.size();
-    int num_samples = input.size();
-    int center_tap = num_taps / 2;
-
-    // Apply FIR filter
-    for (int i = 0; i < num_samples; ++i) {
-        float acc = 0.0;
-        int start_idx = std::max(0, i - center_tap);
-        int end_idx = std::min(num_samples - 1, i + center_tap);
-        for (int j = start_idx; j <= end_idx; ++j) {
-            acc += input[j] * taps[center_tap + (j - i)];
-        }
-        output[i] = acc;
-    }
-}
-
-void HackRfDevice::performFFT(std::vector<std::complex<float>> &fftData)
-{
-    int n = fftData.size();
-    if (n <= 1)
-    {
-        // No need to perform FFT on a single element or empty vector.
-        return;
-    }
-
-    // Helper function to perform the bit reversal permutation
-    auto bit_reversal_permutation = [&](int index) {
-        int reversed = 0;
-        int mask = n >> 1;
-        while (mask > 0)
-        {
-            if (index & mask)
-            {
-                reversed |= (n >> (mask == n ? 0 : 1));
-            }
-            mask >>= 1;
-        }
-        return reversed;
-    };
-
-    // Bit reversal permutation
-    for (int i = 0; i < n; i++)
-    {
-        int rev_i = bit_reversal_permutation(i);
-        if (i < rev_i)
-        {
-            std::swap(fftData[i], fftData[rev_i]);
-        }
-    }
-
-    // FFT computation
-    for (int len = 2; len <= n; len *= 2)
-    {
-        float angle = -2.0f * M_PI / len;
-        std::complex<float> wlen = std::polar(1.0f, angle);
-        for (int i = 0; i < n; i += len)
-        {
-            std::complex<float> w = 1.0f;
-            for (int j = 0; j < len / 2; j++)
-            {
-                std::complex<float> u = fftData[i + j];
-                std::complex<float> t = w * fftData[i + j + len / 2];
-
-                fftData[i + j] = u + t;
-                fftData[i + j + len / 2] = u - t;
-
-                w *= wlen;
-            }
-        }
-    }
-}
-
 void HackRfDevice::process_fft(hackrf_transfer *transfer)
 {
     if (transfer->valid_length <= 0)
@@ -336,39 +227,17 @@ int HackRfDevice::tx_callbackStream(hackrf_transfer *transfer) {
 
 int HackRfDevice::rx_callbackStream(hackrf_transfer *transfer)
 {
-    HackRfDevice *device = reinterpret_cast<HackRfDevice *>(transfer->rx_ctx);   
-    device->process_fft(transfer);
-    // return 0;
+    HackRfDevice *_this = reinterpret_cast<HackRfDevice *>(transfer->rx_ctx);
+    _this->process_fft(transfer);
 
-   // Extract data from HackRF transfer buffer
-   const float* rf_data = reinterpret_cast<const float*>(transfer->buffer);
-   size_t rf_data_len = static_cast<int>(transfer->buffer_length);
+    const float* rf_data = reinterpret_cast<const float*>(transfer->buffer);
+    size_t rf_data_len = static_cast<int>(transfer->buffer_length);
 
-   // Downconvert to baseband by mixing with center frequency
-   std::vector<float> baseband_data(rf_data_len);
-   for (size_t i = 0; i < rf_data_len; ++i) {
-       float phase = 2 * M_PI * device->centerFrequency * i / device->sampleRate;
-       baseband_data[i] = rf_data[i] * std::cos(phase);
-   }
+    QByteArray data(reinterpret_cast<const char*>(rf_data), rf_data_len * sizeof(float));
 
-   // Perform FM demodulation
-   std::vector<float> demodulated_data(rf_data_len);
-   device->fm_demodulation(baseband_data.data(), rf_data_len, demodulated_data.data(), device->sampleRate, device->centerFrequency);
-
-   // Create low-pass filter coefficients
-   float cutoff_freq = device->cutoff_freq;
-   int num_taps = 5;
-   std::vector<float> filter_taps = device->create_lowpass_filter(cutoff_freq, device->sampleRate, num_taps);
-
-   // Apply low-pass filter to demodulated data
-   std::vector<float> filtered_data(rf_data_len);
-   device->apply_fir_filter(demodulated_data, filter_taps, filtered_data);
-
-   QByteArray data(reinterpret_cast<const char*>(filtered_data.data()), rf_data_len * sizeof(float));
-
-   // Write filtered data to audio output
-   if (!device->m_ptt && device->audioOutput && !data.isEmpty()) {
-       device->audioOutput->writeBuffer(data);
-   }
+    // Write filtered data to audio output
+    if (!_this->m_ptt && _this->audioOutput && !data.isEmpty()) {
+        _this->audioOutput->writeBuffer(data);
+    }
    return 0;
 }

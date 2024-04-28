@@ -17,6 +17,8 @@ SOURCES += \
 
 HEADERS += \
     audiooutput.h \
+    buffer.h \
+    constants.h \
     hackrfdevice.h \
     mainwindow.h \
     plotter.h
@@ -33,7 +35,7 @@ macos {
     # INCLUDEPATH += /opt/homebrew/Cellar/hackrf/2024.02.1/include
     # LIBS += -L/opt/homebrew/Cellar/hackrf/2024.02.1/lib -lhackrf
     INCLUDEPATH += /usr/local/include/
-    LIBS += -L/usr/local/lib -lhackrf
+    LIBS += -L/usr/local/lib -lhackrf -lvolk
 }
 
 unix:!macx{

@@ -237,22 +237,39 @@ void resampleIQData(const std::vector<std::complex<float>>& iq_data,
     size_t resampled_size = static_cast<size_t>(iq_data.size() * resample_ratio);
     resampled_iq_data.resize(resampled_size);
 
-    // Resample the IQ data using linear interpolation
+    // Define the predecimation, interpolation, and decimation factors
+    int predec = 0;
+    int interp = 1;
+    int decim = 70;
+
+    // Calculate the input samples per output sample
+    double samples_per_output = static_cast<double>(interp) / decim;
+
+    // Initialize the index for the original IQ data
+    double original_index = 0.0;
+
+    // Resample the IQ data using the specified factors
     for (size_t i = 0; i < resampled_size; ++i) {
-        // Calculate the original index for the resampled sample
-        double original_index = i / resample_ratio;
+        // Calculate the integer and fractional parts of the original index
+        size_t integer_index = static_cast<size_t>(original_index);
+        double fraction = original_index - integer_index;
 
-        // Linear interpolation between lower and upper indices
-        size_t lower_index = static_cast<size_t>(original_index);
-        size_t upper_index = std::min(lower_index + 1, iq_data.size() - 1);
-        double fraction = original_index - lower_index;
+        // Ensure the integer index is within the bounds of the input data
+        size_t lower_index = integer_index;
+        size_t upper_index = std::min(integer_index + 1, iq_data.size() - 1);
 
+        // Perform linear interpolation using lower and upper indices
         std::complex<float> interpolated_value = iq_data[lower_index] * std::complex<float>(1 - fraction, 0.0f) +
                                                  iq_data[upper_index] * std::complex<float>(fraction, 0.0f);
 
+        // Store the resampled value in the output vector
         resampled_iq_data[i] = interpolated_value;
+
+        // Increment the original index by the samples per output sample
+        original_index += samples_per_output;
     }
 }
+
 
 // Function to perform WFM demodulation
 void demodulateWFM(const std::vector<std::complex<float>>& resampled_iq_data,
@@ -271,7 +288,7 @@ void demodulateWFM(const std::vector<std::complex<float>>& resampled_iq_data,
 }
 
 void applyLowPassFilter(const std::vector<float>& input_signal, std::vector<float>& output_signal,
-                        int sample_rate, float cutoff_frequency, size_t num_taps = 9500) {
+                        int sample_rate, float cutoff_frequency, size_t num_taps = 101) {
     // Calculate the filter coefficients using the Hamming window method
     std::vector<float> filter_coefficients(num_taps);
     float nyquist = 0.5f * sample_rate;

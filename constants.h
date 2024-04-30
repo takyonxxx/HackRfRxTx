@@ -6,15 +6,15 @@
 #define _KHZ(x) ((x) * 1000)
 #define _HZ(x) ((x) * 1)
 
-#define hackrfCenterFrequency           _MHZ(100)
-#define hackrfSampleRate                _MHZ(20)
-#define AUDIO_SAMPLE_RATE               _KHZ(48)
-#define DEFAULT_CUT_OFF                 _KHZ(300)
+#define DEFAULT_FREQUENCY              _MHZ(100)
+#define DEFAULT_SAMPLE_RATE            _MHZ(20)
+#define DEFAULT_AUDIO_SAMPLE_RATE      _KHZ(48)
+#define DEFAULT_CUT_OFF                _KHZ(300)
 #define HACKRF_TX_VGA_MAX_DB            47.0
 #define HACKRF_RX_VGA_MAX_DB            40.0
 #define HACKRF_RX_LNA_MAX_DB            40.0
 #define HACKRF_AMP_MAX_DB               14.0
-#define DEFAULT_FFT_SIZE                hackrfSampleRate
+#define DEFAULT_FFT_SIZE                DEFAULT_SAMPLE_RATE
 #define RESET_FFT_FACTOR                0
 
 #define DB_M_PI     3.14159265358979323846

@@ -32,10 +32,10 @@ macos {
     QMAKE_ASSET_CATALOGS = $$PWD/macos/Assets.xcassets
     QMAKE_ASSET_CATALOGS_APP_ICON = "AppIcon"
 
-    # INCLUDEPATH += /opt/homebrew/Cellar/hackrf/2024.02.1/include
-    # LIBS += -L/opt/homebrew/Cellar/hackrf/2024.02.1/lib -lhackrf
-    INCLUDEPATH += /usr/local/include/
-    LIBS += -L/usr/local/lib -lhackrf -lvolk
+    INCLUDEPATH += /opt/homebrew/Cellar/hackrf/2024.02.1/include
+    LIBS += -L/opt/homebrew/Cellar/hackrf/2024.02.1/lib -lhackrf
+#    INCLUDEPATH += /usr/local/include/
+#    LIBS += -L/usr/local/lib -lhackrf -lvolk
 }
 
 unix:!macx{

@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "constants.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -15,9 +16,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->plotter->setTooltipsEnabled(true);
 
-    ui->plotter->setSampleRate(hackrfSampleRate);
-    ui->plotter->setSpanFreq(static_cast<quint32>(hackrfSampleRate));
-    ui->plotter->setCenterFreq(static_cast<quint64>(hackrfCenterFrequency));
+    ui->plotter->setSampleRate(DEFAULT_SAMPLE_RATE);
+    ui->plotter->setSpanFreq(static_cast<quint32>(DEFAULT_SAMPLE_RATE));
+    ui->plotter->setCenterFreq(static_cast<quint64>(DEFAULT_FREQUENCY));
 
     ui->plotter->setFftRange(-140.0f, 20.0f);
     ui->plotter->setPandapterRange(-140.f, 20.f);

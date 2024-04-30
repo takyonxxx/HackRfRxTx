@@ -9,7 +9,6 @@
 #include <complex>
 #include <libhackrf/hackrf.h>
 #include "audiooutput.h"
-#include "constants.h"
 
 enum HackRF_Format {
     HACKRF_FORMAT_FLOAT32	=0,
@@ -62,6 +61,7 @@ private:
     bool m_ptt;
     int centerFrequency;
     int sampleRate;
+    int audioSampleRate;
     int cutoff_freq;
 
     float *d_realFftData;
